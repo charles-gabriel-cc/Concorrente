@@ -14,7 +14,7 @@ type Event struct {
 }
 
 func (Event) Process(e Event) {
-	fmt.Println(e.E)
+
 }
 
 func producer(id int, wg *sync.WaitGroup, EB *MutexEventBuffer) {
@@ -22,7 +22,7 @@ func producer(id int, wg *sync.WaitGroup, EB *MutexEventBuffer) {
 
 	e := Event{E: id}
 
-	EB.Produzir(e)
+	EB.Produzir(e, id)
 }
 
 func consumer(id int, wg *sync.WaitGroup, EB *MutexEventBuffer) {
@@ -46,9 +46,9 @@ func NewMutexEventBuffer(capacity int) *MutexEventBuffer {
 	return aux
 }
 
-func (s *MutexEventBuffer) Produzir(e Event) {
+func (s *MutexEventBuffer) Produzir(e Event, id int) {
 	s.mu.Lock()
-	for len(s.buffer) == s.capacity && consumidores == 0 {
+	for len(s.buffer) > 0 || consumidores == 0 {
 		s.mu.Unlock()
 		runtime.Gosched()
 		s.mu.Lock()
@@ -56,13 +56,14 @@ func (s *MutexEventBuffer) Produzir(e Event) {
 	for i := 0; i < consumidores; i++ {
 		s.buffer = append(s.buffer, e)
 	}
+	fmt.Println("P" + strconv.Itoa(id) + " (produtor) invoca produzir")
 	s.mu.Unlock()
 }
 
 func (s *MutexEventBuffer) Consumir(id int) Event {
 	s.mu.Lock()
+	fmt.Println("C" + strconv.Itoa(id) + " (consumidor) invoca consumir()")
 	consumidores++
-	fmt.Println("C" + strconv.Itoa(id) + " (consumidor) invoca consumir() e fica bloqueado")
 	for len(s.buffer) == 0 {
 		s.mu.Unlock()
 		runtime.Gosched()
@@ -70,8 +71,8 @@ func (s *MutexEventBuffer) Consumir(id int) Event {
 	}
 	consumidores--
 	ret := s.buffer[0]
-	fmt.Println("C" + strconv.Itoa(id) + " (consumidor) consome " + strconv.Itoa(ret.E))
 	s.buffer = s.buffer[1:]
+	fmt.Println("C" + strconv.Itoa(id) + " (consumidor) consome " + strconv.Itoa(ret.E))
 	s.mu.Unlock()
 
 	return ret
@@ -83,11 +84,13 @@ func main() {
 	EB := NewMutexEventBuffer(100)
 
 	wg.Add(1)
+	go producer(3, &wg, EB)
+	wg.Add(1)
+	go producer(2, &wg, EB)
+	wg.Add(1)
 	go consumer(1, &wg, EB)
 	wg.Add(1)
 	go consumer(2, &wg, EB)
-	wg.Add(1)
-	go producer(2, &wg, EB)
 
 	wg.Wait()
 }
